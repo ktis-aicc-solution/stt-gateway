@@ -1,3 +1,39 @@
 spring:
   application:
     name: stt-gateway
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+stt:
+  gateway:
+    capture:
+      interface-name: eth3
+      filter: "udp port 5060 or (udp portrange 10000-20000)"
+      dump-path: /APP_DATA/DUMP
+      dump-enabled: true
+      dump-retention-days: 3
+    audio:
+      output-path: /APP_DATA/audio
+      format: WAV
+      sample-rate: 8000
+      bits-per-sample: 16
+      retention-days: 30
+    sip:
+      port: 5060
+    rtp:
+      port-min: 10000
+      port-max: 20000
+    streaming:
+      max-duration-seconds: 270
+      overlap-seconds: 2
