@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <title>STT Gateway - 대시보드</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; background: #f0f2f5; }
+        header { background: #001529; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { margin: 0; font-size: 1.2rem; }
+        header a { color: #aaa; text-decoration: none; font-size: 0.85rem; }
+        header a:hover { color: white; }
+        .container { padding: 24px; }
+        .stats { display: flex; gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; border-radius: 8px; padding: 16px 24px; flex: 1; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .stat-card .label { color: #888; font-size: 0.85rem; }
+        .stat-card .value { font-size: 2rem; font-weight: bold; color: #1890ff; }
+        .stat-card .value.running { color: #52c41a; }
+        .stat-card .value.stopped { color: #f5222d; }
+        .refresh-hint { font-size: 0.75rem; color: #bbb; text-align: right; margin-bottom: 8px; }
+        table { width: 100%; background: white; border-radius: 8px; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #fafafa; color: #555; font-weight: 600; }
+        tr:last-child td { border-bottom: none; }
+        tr.call-row { cursor: pointer; }
+        tr.call-row:hover { background: #e6f7ff; }
+        tr.call-row.selected { background: #bae7ff; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .badge-active { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+        .badge-ringing { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+        .empty-msg { text-align: center; color: #aaa; padding: 32px; }
+
+        /* STT 패널 */
+        .stt-panel { margin-top: 24px; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: none; }
+        .stt-panel.visible { display: block; }
+        .stt-panel-header { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .stt-panel-header h2 { margin: 0; font-size: 1rem; color: #333; }
+        .stt-panel-header .call-id-label { font-size: 0.8rem; color: #888; }
+        .ws-status { font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; }
+        .ws-status.connected { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+        .ws-status.disconnected { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+        .stt-channels { display: flex; gap: 0; }
+        .stt-channel { flex: 1; padding: 16px; border-right: 1px solid #f0f0f0; }
+        .stt-channel:last-child { border-right: none; }
+        .stt-channel-title { font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; }
+        .stt-channel.rx .stt-channel-title { color: #1890ff; }
+        .stt-channel.tx .stt-channel-title { color: #722ed1; }
+        .stt-transcript { height: 240px; overflow-y: auto; font-size: 0.95rem; line-height: 1.6; }
+        .stt-line { padding: 4px 0; border-bottom: 1px solid #fafafa; }
+        .stt-line.interim { color: #aaa; font-style: italic; }
+        .stt-line.final { color: #222; }
+        .stt-line .time { font-size: 0.75rem; color: #bbb; margin-right: 6px; }
+        .stt-line .conf { font-size: 0.75rem; color: #bbb; margin-left: 6px; }
+        .no-stt-msg { color: #bbb; font-size: 0.9rem; text-align: center; margin-top: 80px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>STT Gateway 대시보드</h1>
+    <form th:action="@{/logout}" method="post" style="display:inline;">
+        <span sec:authentication="name" style="margin-right:12px; color:#ccc;"></span>
+        <button type="submit" style="background:none; border:1px solid #555; color:#aaa; padding:4px 12px; cursor:pointer; border-radius:4px;">로그아웃</button>
+    </form>
+</header>
+<div class="container">
+    <div class="stats">
+        <div class="stat-card">
+            <div class="label">캡처 상태</div>
+            <div id="stat-capture" class="value" th:classappend="${captureRunning} ? 'running' : 'stopped'"
+                 th:text="${captureRunning} ? '실행 중' : '중지'"></div>
+        </div>
+        <div class="stat-card">
+            <div class="label">활성 세션</div>
+            <div id="stat-sessions" class="value" th:text="${activeSessionCount}">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">활성 통화</div>
+            <div id="stat-calls" class="value" th:text="${#lists.size(activeCalls)}">0</div>
+        </div>
+    </div>
+
+    <div class="refresh-hint" id="refreshHint">자동 갱신 중...</div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Call-ID</th>
+                <th>발신번호</th>
+                <th>수신번호</th>
+                <th>상태</th>
+                <th>시작 시간</th>
+            </tr>
+        </thead>
+        <tbody id="callTableBody">
+            <tr th:if="${#lists.isEmpty(activeCalls)}">
+                <td colspan="5" class="empty-msg">활성 통화가 없습니다.</td>
+            </tr>
+            <tr class="call-row" th:each="call : ${activeCalls}"
+                th:attr="data-callid=${call.callId}">
+                <td th:text="${call.callId}"></td>
+                <td th:text="${call.callerNumber}"></td>
+                <td th:text="${call.calleeNumber}"></td>
+                <td>
+                    <span th:classappend="${call.status.name() == 'ACTIVE'} ? 'badge-active' : 'badge-ringing'"
+                          class="badge" th:text="${call.status}"></span>
+                </td>
+                <td th:text="${#temporals.format(call.startTime, 'yyyy-MM-dd HH:mm:ss')}"></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- 실시간 STT 패널 -->
+    <div class="stt-panel" id="sttPanel">
+        <div class="stt-panel-header">
+            <div>
+                <h2>실시간 STT</h2>
+                <span class="call-id-label" id="sttCallIdLabel"></span>
+            </div>
+            <span class="ws-status disconnected" id="wsStatus">연결 안됨</span>
+        </div>
+        <div class="stt-channels">
+            <div class="stt-channel rx">
+                <div class="stt-channel-title">RX (고객)</div>
+                <div class="stt-transcript" id="rxTranscript">
+                    <div class="no-stt-msg">STT 결과를 기다리는 중...</div>
+                </div>
+            </div>
+            <div class="stt-channel tx">
+                <div class="stt-channel-title">TX (상담원)</div>
+                <div class="stt-transcript" id="txTranscript">
+                    <div class="no-stt-msg">STT 결과를 기다리는 중...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+<script>
+    let stompClient = null;
+    let currentSubscription = null;
+    let currentCallId = null;
+
+    // ─── 초기화
+    window.addEventListener('DOMContentLoaded', function () {
+        initWebSocket();
+        attachCallRowHandlers(document.querySelectorAll('.call-row'));
+        setInterval(refreshDashboard, 5000);
+    });
+
+    // ─── WebSocket 연결 (페이지 로드 시 자동 연결)
+    function initWebSocket() {
+        if (stompClient && stompClient.connected) return;
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null;
+        stompClient.connect({}, function () {
+            setWsStatus(true);
+            if (currentCallId) subscribe(currentCallId);
+        }, function () {
+            setWsStatus(false);
+            setTimeout(initWebSocket, 5000); // 5초 후 재연결
+        });
+    }
+
+    function subscribe(callId) {
+        if (currentSubscription) currentSubscription.unsubscribe();
+        currentSubscription = stompClient.subscribe('/topic/stt/' + callId, function (frame) {
+            const msg = JSON.parse(frame.body);
+            appendSttLine(msg);
+        });
+    }
+
+    // ─── 대시보드 자동 갱신 (5초마다)
+    function refreshDashboard() {
+        fetch('/api/v1/calls')
+            .then(r => r.json())
+            .then(function (calls) {
+                updateCallTable(calls);
+                document.getElementById('stat-calls').textContent = calls.length;
+                updateRefreshHint();
+            })
+            .catch(function () {});
+
+        fetch('/api/v1/capture/status')
+            .then(r => r.json())
+            .then(function (status) {
+                const captureEl = document.getElementById('stat-capture');
+                captureEl.textContent = status.running ? '실행 중' : '중지';
+                captureEl.className = 'value ' + (status.running ? 'running' : 'stopped');
+                document.getElementById('stat-sessions').textContent = status.activeSessionCount;
+            })
+            .catch(function () {});
+    }
+
+    function updateCallTable(calls) {
+        const tbody = document.getElementById('callTableBody');
+        if (calls.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">활성 통화가 없습니다.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = calls.map(function (call) {
+            const statusClass = call.status === 'ACTIVE' ? 'badge-active' : 'badge-ringing';
+            const selected = call.callId === currentCallId ? ' selected' : '';
+            return '<tr class="call-row' + selected + '" data-callid="' + escapeAttr(call.callId) + '">'
+                + '<td>' + escapeHtml(call.callId) + '</td>'
+                + '<td>' + escapeHtml(call.callerNumber || '') + '</td>'
+                + '<td>' + escapeHtml(call.calleeNumber || '') + '</td>'
+                + '<td><span class="badge ' + statusClass + '">' + escapeHtml(call.status) + '</span></td>'
+                + '<td>' + formatDateTime(call.startTime) + '</td>'
+                + '</tr>';
+        }).join('');
+        attachCallRowHandlers(document.querySelectorAll('.call-row'));
+    }
+
+    function attachCallRowHandlers(rows) {
+        rows.forEach(function (row) {
+            row.addEventListener('click', function () {
+                onCallRowClick(this);
+            });
+        });
+    }
+
+    function onCallRowClick(row) {
+        const callId = row.dataset.callid;
+        if (callId === currentCallId) return;
+
+        document.querySelectorAll('.call-row').forEach(function (r) { r.classList.remove('selected'); });
+        row.classList.add('selected');
+
+        currentCallId = callId;
+        document.getElementById('sttCallIdLabel').textContent = callId;
+        document.getElementById('sttPanel').classList.add('visible');
+        clearTranscript();
+
+        if (stompClient && stompClient.connected) {
+            subscribe(callId);
+        }
+    }
+
+    // ─── STT 결과 표시
+    function appendSttLine(msg) {
+        const channel = msg.channel === 'RX' ? 'rx' : 'tx';
+        const container = document.getElementById(channel + 'Transcript');
+
+        const noMsg = container.querySelector('.no-stt-msg');
+        if (noMsg) noMsg.remove();
+
+        if (!msg.final) {
+            let interim = container.querySelector('.interim');
+            if (!interim) {
+                interim = document.createElement('div');
+                interim.className = 'stt-line interim';
+                container.appendChild(interim);
+            }
+            interim.innerHTML = '<span class="time">' + formatTime(msg.timestamp) + '</span>' + escapeHtml(msg.transcript);
+        } else {
+            const interim = container.querySelector('.interim');
+            if (interim) interim.remove();
+
+            const line = document.createElement('div');
+            line.className = 'stt-line final';
+            const conf = msg.confidence ? ' (' + Math.round(msg.confidence * 100) + '%)' : '';
+            line.innerHTML = '<span class="time">' + formatTime(msg.timestamp) + '</span>'
+                + escapeHtml(msg.transcript)
+                + '<span class="conf">' + conf + '</span>';
+            container.appendChild(line);
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function clearTranscript() {
+        ['rxTranscript', 'txTranscript'].forEach(function (id) {
+            document.getElementById(id).innerHTML = '<div class="no-stt-msg">STT 결과를 기다리는 중...</div>';
+        });
+    }
+
+    // ─── 유틸
+    function setWsStatus(connected) {
+        const el = document.getElementById('wsStatus');
+        el.textContent = connected ? '연결됨' : '연결 끊김';
+        el.className = 'ws-status ' + (connected ? 'connected' : 'disconnected');
+    }
+
+    function updateRefreshHint() {
+        const now = new Date();
+        document.getElementById('refreshHint').textContent =
+            '마지막 갱신: ' + now.toLocaleTimeString('ko-KR') + ' (5초마다 자동 갱신)';
+    }
+
+    function formatDateTime(dt) {
+        if (!dt) return '';
+        let d;
+        if (Array.isArray(dt)) {
+            // Jackson 배열 형식: [year, month, day, hour, minute, second]
+            d = new Date(dt[0], dt[1] - 1, dt[2], dt[3] || 0, dt[4] || 0, dt[5] || 0);
+        } else {
+            d = new Date(dt);
+        }
+        return d.getFullYear() + '-'
+            + String(d.getMonth() + 1).padStart(2, '0') + '-'
+            + String(d.getDate()).padStart(2, '0') + ' '
+            + String(d.getHours()).padStart(2, '0') + ':'
+            + String(d.getMinutes()).padStart(2, '0') + ':'
+            + String(d.getSeconds()).padStart(2, '0');
+    }
+
+    function formatTime(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return String(d.getHours()).padStart(2, '0') + ':'
+            + String(d.getMinutes()).padStart(2, '0') + ':'
+            + String(d.getSeconds()).padStart(2, '0');
+    }
+
+    function escapeHtml(str) {
+        return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function escapeAttr(str) {
+        return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    }
+</script>
+</body>
+</html>

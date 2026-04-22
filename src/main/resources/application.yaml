@@ -2,6 +2,10 @@ spring:
   application:
     name: stt-gateway
 
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -31,9 +35,17 @@ stt:
       retention-days: 30
     sip:
       port: 5060
+      # 허용할 발신번호 프리픽스 (비어있으면 전체 허용)
+      # 예: caller-number-prefixes: ["1588", "1644"]
+      caller-number-prefixes: []
+      # 허용할 수신번호 프리픽스 (비어있으면 전체 허용)
+      # 예: callee-number-prefixes: ["1000", "2000"]
+      callee-number-prefixes: []
     rtp:
       port-min: 10000
       port-max: 20000
     streaming:
       max-duration-seconds: 270
       overlap-seconds: 2
+    google:
+      credentials-file: /APP/google-credentials.json

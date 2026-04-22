@@ -1,5 +1,7 @@
 package com.ktis.stt_gateway.stt.provider;
 
+import com.google.api.gax.core.FixedCredentialsProvider;
+import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.speech.v1.*;
 import com.google.protobuf.ByteString;
 import com.ktis.stt_gateway.audio.AudioChannel;
@@ -15,13 +17,14 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.function.Consumer;
 
 @Component("googleSttProvider")
 @Slf4j
 public class GoogleSttProvider implements SttProvider {
 
-    @Value("${stt.gateway.google.credentials-file-path:#{null}}")
+    @Value("${stt.gateway.google.credentials-file:#{null}}")
     private String credentialsFilePath;
 
     @Override
@@ -95,6 +98,15 @@ public class GoogleSttProvider implements SttProvider {
     }
 
     private SpeechClient createSpeechClient() throws IOException {
+        if (credentialsFilePath != null && Files.exists(Path.of(credentialsFilePath))) {
+            GoogleCredentials credentials = GoogleCredentials
+                .fromStream(Files.newInputStream(Path.of(credentialsFilePath)))
+                .createScoped(Collections.singletonList("https://www.googleapis.com/auth/cloud-platform"));
+            SpeechSettings settings = SpeechSettings.newBuilder()
+                .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
+                .build();
+            return SpeechClient.create(settings);
+        }
         return SpeechClient.create();
     }
 

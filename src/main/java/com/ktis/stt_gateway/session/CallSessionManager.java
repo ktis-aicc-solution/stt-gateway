@@ -1,9 +1,12 @@
 package com.ktis.stt_gateway.session;
 
+import com.ktis.stt_gateway.audio.AudioFileWriter;
+import com.ktis.stt_gateway.config.AppProperties;
 import com.ktis.stt_gateway.domain.Call;
 import com.ktis.stt_gateway.domain.CallStatus;
 import com.ktis.stt_gateway.repository.CallRepository;
 import com.ktis.stt_gateway.sip.SipMessage;
+import com.ktis.stt_gateway.stt.SttStreamingManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -21,11 +24,20 @@ public class CallSessionManager {
 
     private final ConcurrentHashMap<String, CallSession> activeSessions = new ConcurrentHashMap<>();
     private final CallRepository callRepository;
+    private final AudioFileWriter audioFileWriter;
+    private final SttStreamingManager sttStreamingManager;
+    private final AppProperties props;
 
     @Transactional
     public void onCallStart(SipMessage sip, Timestamp timestamp) {
         String callId = sip.getCallId();
         if (activeSessions.containsKey(callId)) return;
+
+        if (!isAllowedCall(sip)) {
+            log.debug("통화 필터링: callId={}, from={}, to={}", callId,
+                maskPhoneNumber(sip.getFromNumber()), maskPhoneNumber(sip.getToNumber()));
+            return;
+        }
 
         LocalDateTime startTime = timestamp != null
             ? timestamp.toLocalDateTime()
@@ -84,6 +96,9 @@ public class CallSessionManager {
 
         log.info("콜 종료: callId={}, duration={}초",
             session.getCallId(), session.getDurationSeconds());
+
+        sttStreamingManager.stopSession(session.getCallId()); // 스트리밍 STT 종료
+        audioFileWriter.finalizeAndSave(session);             // 아카이브용 WAV 저장
     }
 
     public CallSession findByCallId(String callId) {
@@ -101,6 +116,24 @@ public class CallSessionManager {
 
     public int getActiveSessionCount() {
         return activeSessions.size();
+    }
+
+    private boolean isAllowedCall(SipMessage sip) {
+        var callerPrefixes = props.getSip().getCallerNumberPrefixes();
+        var calleePrefixes = props.getSip().getCalleeNumberPrefixes();
+
+        if (callerPrefixes.isEmpty() && calleePrefixes.isEmpty()) return true;
+
+        String caller = sip.getFromNumber();
+        String callee = sip.getToNumber();
+
+        if (!callerPrefixes.isEmpty() && caller != null) {
+            if (callerPrefixes.stream().anyMatch(caller::startsWith)) return true;
+        }
+        if (!calleePrefixes.isEmpty() && callee != null) {
+            if (calleePrefixes.stream().anyMatch(callee::startsWith)) return true;
+        }
+        return false;
     }
 
     private String maskPhoneNumber(String phoneNumber) {

@@ -1,6 +1,7 @@
 package com.ktis.stt_gateway.stt;
 
 import com.ktis.stt_gateway.audio.AudioChannel;
+import com.ktis.stt_gateway.config.AppProperties;
 import com.ktis.stt_gateway.domain.SttMode;
 import com.ktis.stt_gateway.domain.SttResultEntity;
 import com.ktis.stt_gateway.push.WebSocketPushService;
@@ -12,6 +13,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -21,6 +26,7 @@ public class SttService {
     private final SttProviderFactory providerFactory;
     private final SttResultRepository sttResultRepository;
     private final WebSocketPushService pushService;
+    private final AppProperties props;
 
     @Async("sttExecutor")
     @Transactional
@@ -34,11 +40,16 @@ public class SttService {
         try {
             SttProvider provider = providerFactory.getActiveProvider();
 
+            String dateDir = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+            String fileName = session.getCallId() + "_" + channel.name().toLowerCase() + ".wav";
+            String audioFilePath = Path.of(props.getAudio().getOutputPath(), dateDir, fileName).toString();
+
             SttRequest request = SttRequest.builder()
                 .callId(session.getCallId())
                 .channel(channel)
                 .languageCode("ko-KR")
                 .sampleRate(8000)
+                .audioFilePath(audioFilePath)
                 .build();
 
             SttResult result = provider.transcribeBatch(request);
@@ -69,6 +80,21 @@ public class SttService {
 
         sttResultRepository.save(entity);
         pushService.pushSttResult(result);
+    }
+
+    /** 스트리밍 STT 최종 결과 DB 저장 (WebSocket push는 SttStreamingManager가 직접 처리) */
+    @Transactional
+    public void saveResult(SttResult result) {
+        SttResultEntity entity = SttResultEntity.builder()
+            .callId(result.getCallId())
+            .channel(result.getChannel())
+            .transcript(result.getTranscript())
+            .confidence(result.getConfidence())
+            .sttMode(result.getSttMode() != null ? result.getSttMode() : SttMode.STREAMING)
+            .isFinal(result.isFinal())
+            .errorMessage(result.getErrorMessage())
+            .build();
+        sttResultRepository.save(entity);
     }
 
     @Transactional

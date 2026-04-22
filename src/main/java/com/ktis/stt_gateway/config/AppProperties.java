@@ -5,6 +5,9 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Component
 @ConfigurationProperties(prefix = "stt.gateway")
 @Getter
@@ -16,6 +19,7 @@ public class AppProperties {
     private Sip sip = new Sip();
     private Rtp rtp = new Rtp();
     private Streaming streaming = new Streaming();
+    private Google google = new Google();
 
     @Getter
     @Setter
@@ -41,6 +45,10 @@ public class AppProperties {
     @Setter
     public static class Sip {
         private int port = 5060;
+        /** 허용할 발신번호 프리픽스 목록 (비어있으면 전체 허용) */
+        private List<String> callerNumberPrefixes = new ArrayList<>();
+        /** 허용할 수신번호 프리픽스 목록 (비어있으면 전체 허용) */
+        private List<String> calleeNumberPrefixes = new ArrayList<>();
     }
 
     @Getter
@@ -55,5 +63,11 @@ public class AppProperties {
     public static class Streaming {
         private int maxDurationSeconds = 270;
         private int overlapSeconds = 2;
+    }
+
+    @Getter
+    @Setter
+    public static class Google {
+        private String credentialsFile;
     }
 }
