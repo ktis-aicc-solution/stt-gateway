@@ -1,6 +1,7 @@
 package com.ktis.stt_gateway.capture;
 
 import com.ktis.stt_gateway.config.AppProperties;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.pcap4j.core.*;
@@ -21,6 +22,7 @@ public class PacketCaptureService {
     private PcapHandle handle;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
+    @PostConstruct
     public void startCapture() {
         if (running.get()) {
             log.warn("패킷 캡처가 이미 실행 중입니다.");

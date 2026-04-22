@@ -14,4 +14,4 @@ CREATE TABLE stt_results (
 );
 
 CREATE INDEX idx_stt_results_call_id ON stt_results (call_id, channel, created_at);
-CREATE INDEX idx_stt_results_final ON stt_results (call_id, is_final) WHERE is_final = TRUE;
+CREATE INDEX idx_stt_results_final ON stt_results (call_id, is_final);

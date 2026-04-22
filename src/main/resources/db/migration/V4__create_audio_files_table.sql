@@ -16,4 +16,4 @@ CREATE TABLE audio_files (
 );
 
 CREATE INDEX idx_audio_files_call_id ON audio_files (call_id);
-CREATE INDEX idx_audio_files_cleanup ON audio_files (created_at, is_deleted) WHERE is_deleted = FALSE;
+CREATE INDEX idx_audio_files_cleanup ON audio_files (created_at, is_deleted);

@@ -17,4 +17,4 @@ CREATE TABLE calls (
 
 CREATE INDEX idx_calls_start_time ON calls (start_time DESC);
 CREATE INDEX idx_calls_caller_number ON calls (caller_number, start_time DESC);
-CREATE INDEX idx_calls_status_active ON calls (status, start_time) WHERE status IN ('RINGING', 'ACTIVE');
+CREATE INDEX idx_calls_status_active ON calls (status, start_time);
